@@ -1,7 +1,9 @@
 # Orinami
 
 VCV Rack 2 module: a waveshaper modelled on a foldable, spinnable oscilloscope
-screen whose fold and rotation are sprung, coupled second-order systems.
+screen whose fold and rotation are sprung, coupled second-order systems.  
+An interactive demo of operation is available here:
+https://thecowgoesmoo.github.io/irk-em_Orinami/How%20Orinami%20Works.html
 
 ## Build
 
