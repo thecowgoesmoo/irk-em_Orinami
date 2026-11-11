@@ -1,0 +1,23 @@
+{
+  "slug": "irk-em_Orinami",
+  "name": "Orinami",
+  "version": "2.0.0",
+  "license": "proprietary",
+  "brand": "irk'em",
+  "author": "Richard K Moore",
+  "authorEmail": "are.kay.more@gmail.com",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "Orinami",
+      "name": "Orinami",
+      "description": "Waveshaper/folder modelled on 2 orthogonal projections of response curves from a foldable, spinnable oscilloscope screen with sprung, self-oscillating fold and rotation",
+      "tags": ["Waveshaper", "Distortion", "Physical modeling", "Low-frequency oscillator"]
+    }
+  ]
+}

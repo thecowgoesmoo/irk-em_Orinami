@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Orinami Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one drafting-sheet figure (screen + two projected traces) on top, controls and a short key below. */
+:root {
+  --bg: #eef0ef;
+  --surface: #f8f9f8;
+  --ink: #16242b;
+  --muted: #5d6c72;
+  --rule: #c4ccce;
+  --spot: #e0861a;
+  --def: #0b7a75;
+  --orth: #8a3ea8;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171b; --surface: #162127; --ink: #e3ecee; --muted: #8fa1a8; --rule: #2c3b42;
+    --spot: #ffb347; --def: #4fd1c5; --orth: #c58cf0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171b; --surface: #162127; --ink: #e3ecee; --muted: #8fa1a8; --rule: #2c3b42;
+  --spot: #ffb347; --def: #4fd1c5; --orth: #c58cf0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.5;
+}
+main { max-width: 980px; margin: 0 auto; padding: 28px 20px 48px; display: flex; flex-direction: column; gap: 22px; }
+h1 {
+  font-family: var(--font-display); font-weight: 600; font-size: 2.1rem; letter-spacing: 0.14em;
+  margin: 0; text-transform: uppercase;
+}
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+p { margin: 0; max-width: 65ch; }
+.lede { font-size: 1.08rem; }
+.figure { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px; }
+canvas { display: block; width: 100%; height: auto; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button {
+  font: 500 0.86rem var(--font-body); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 4px; padding: 6px 11px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--spot); outline-offset: 2px; }
+button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px 28px; }
+.group { display: flex; flex-direction: column; gap: 7px; }
+.ctl { display: grid; grid-template-columns: 104px 1fr 54px; gap: 10px; align-items: center; font-size: 0.88rem; }
+.ctl output { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--ink); }
+.key { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px 28px; }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 0.92rem; }
+dt { font-weight: 600; white-space: nowrap; }
+dd { margin: 0; color: var(--muted); }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; }
+.eq { font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); overflow-x: auto; white-space: pre; padding: 2px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header class="group">
+    <h1>Orinami</h1>
+    <p class="lede">The input signal is a position on a strip of screen. Bend the strip, spin it about its hinge, and read where the lit point lands on two perpendicular axes. Those two readings are the outputs.</p>
+  </header>
+
+  <section class="figure" aria-label="Animated diagram of the folded screen and its two projections">
+    <canvas id="fig" width="1380" height="1460"></canvas>
+  </section>
+
+  <section class="group" aria-label="Presets">
+    <h2>Try a setting</h2>
+    <div class="row">
+      <button data-preset="flat">Flat screen</button>
+      <button data-preset="sine">Curled: sine fold</button>
+      <button data-preset="pleat">Pleated: triangle fold</button>
+      <button data-preset="square">Square: clip</button>
+      <button data-preset="tilt">Tilted</button>
+      <button data-preset="ring">Ring-out</button>
+      <button data-preset="osc">Self-oscillating</button>
+      <button id="kickFold">Kick fold</button>
+      <button id="kickSpin">Kick spin</button>
+      <button id="pause" class="primary">Pause</button>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Controls">
+    <div class="group">
+      <h2>Screen</h2>
+      <label class="ctl" for="sep">Separation<input type="range" id="sep" min="-3" max="1" step="0.01" value="0.15"><output id="sepO"></output></label>
+      <label class="ctl" for="rot">Rotation<input type="range" id="rot" min="-180" max="180" step="1" value="25"><output id="rotO"></output></label>
+      <label class="ctl" for="shape">Shape<input type="range" id="shape" min="-1" max="1" step="0.01" value="0"><output id="shapeO"></output></label>
+      <label class="ctl" for="freq">Input rate<input type="range" id="freq" min="0.1" max="2" step="0.01" value="0.45"><output id="freqO"></output></label>
+    </div>
+    <div class="group">
+      <h2>Fold spring</h2>
+      <label class="ctl" for="kf">Stiffness<input type="range" id="kf" min="0" max="2.6" step="0.01" value="1.3"><output id="kfO"></output></label>
+      <label class="ctl" for="m">Mass<input type="range" id="m" min="-1" max="1" step="0.01" value="0"><output id="mO"></output></label>
+      <label class="ctl" for="zf">Damping<input type="range" id="zf" min="-0.2" max="1" step="0.01" value="0.5"><output id="zfO"></output></label>
+    </div>
+    <div class="group">
+      <h2>Rotation spring</h2>
+      <label class="ctl" for="kr">Stiffness<input type="range" id="kr" min="0" max="2.6" step="0.01" value="1.0"><output id="krO"></output></label>
+      <label class="ctl" for="zr">Damping<input type="range" id="zr" min="-0.2" max="1" step="0.01" value="0.5"><output id="zrO"></output></label>
+      <label class="ctl" for="cpl">Coupling<input type="range" id="cpl" min="0" max="1" step="0.01" value="1"><output id="cplO"></output></label>
+    </div>
+  </section>
+
+  <section class="key">
+    <div>
+      <h2>Reading the figure</h2>
+      <dl>
+        <dt><span class="swatch" style="background:var(--spot)"></span>Lit point</dt><dd>The input sample, as a position along the strip from one end (−1) to the other (+1).</dd>
+        <dt><span class="swatch" style="background:var(--def)"></span>Default out</dt><dd>The point's shadow on the horizontal axis, traced downward over time.</dd>
+        <dt><span class="swatch" style="background:var(--orth)"></span>Orthogonal out</dt><dd>Its shadow on the vertical axis, traced leftward over time.</dd>
+        <dt>Dashed outline</dt><dd>Where the springs are trying to hold the strip: the Separation and Rotation settings.</dd>
+      </dl>
+    </div>
+    <div>
+      <h2>What moves it</h2>
+      <dl>
+        <dt>Separation</dt><dd>Rest length of the spring joining the two end masses. 1 is flat, 0 brings the ends together, below 0 winds the strip up to four turns.</dd>
+        <dt>Rotation</dt><dd>Rest angle of the torsion spring at the hinge.</dd>
+        <dt>Shape</dt><dd>How the bend is distributed: sharp pleats, an even arc, or square corners.</dd>
+        <dt>Mass</dt><dd>The end masses. They also set how hard the strip is to spin, so curling it in speeds the spin up.</dd>
+        <dt>Damping</dt><dd>Below zero the spring feeds energy in and that axis oscillates by itself.</dd>
+        <dt>Coupling</dt><dd>How strongly the spin throws the end masses outward.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>The model</h2>
+    <div class="eq">T = ½·M·u′² + ½·I(u)·θ′²        M = m/2,  I(u) = 2m·(r(u)² + r₀²)
+V = ½·k_fold·(u − u₀)² + ½·k_rot·(θ − θ₀)²
+default = y·cos θ − z·sin θ      orthogonal = y·sin θ + z·cos θ</div>
+    <p style="color:var(--muted);font-size:0.92rem">u is the separation, θ the rotation, r(u) the distance of the end masses from the hinge, and (y, z) the lit point's position on the bent strip. This page runs the same equations as the module, slowed down so the motion is visible.</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var PI = Math.PI, TWO_PI = 2 * PI;
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------------------------------------------------------------- geometry
+  var NT = 2048, NF = 4, tabC = new Float64Array(NT + 1), tabS = new Float64Array(NT + 1), tabShape = null;
+
+  function buildTables(shape) {
+    if (shape === tabShape) return;
+    tabShape = shape;
+    var n = NT * NF, h = TWO_PI / n, q = shape < 0 ? PI : PI / 2, w = Math.abs(shape);
+    var c = new Float64Array(n + 1), s = new Float64Array(n + 1), pc = 1, ps = 0, i;
+    for (i = 1; i <= n; i++) {
+      var tau = i * h, phi = (1 - w) * tau + w * q * Math.round(tau / q);
+      var cc = Math.cos(phi), ss = Math.sin(phi);
+      c[i] = c[i - 1] + 0.5 * h * (pc + cc);
+      s[i] = s[i - 1] + 0.5 * h * (ps + ss);
+      pc = cc; ps = ss;
+    }
+    for (i = 0; i <= NT; i++) {
+      tabC[i] = c[i * NF] - c[n] * i / NT;
+      tabS[i] = s[i * NF] - s[n] * i / NT;
+    }
+  }
+
+  // arc position s on a strip with separation u -> [y, z] in the strip's frame
+  function screenMap(s, u, out) {
+    var alpha = Math.max(PI * (1 - u), 1e-6), tau = alpha * s;
+    var t = Math.abs(tau) * NT / TWO_PI;
+    t -= NT * Math.floor(t / NT);
+    var i0 = Math.min(Math.floor(t), NT - 1), f = t - i0;
+    var cv = tabC[i0] + f * (tabC[i0 + 1] - tabC[i0]);
+    var sv = i0 === 0 ? f * f * tabS[1] : tabS[i0] + f * (tabS[i0 + 1] - tabS[i0]);
+    out[0] = (tau < 0 ? -cv : cv) / alpha;
+    out[1] = sv / alpha;
+  }
+
+  // ---------------------------------------------------------------- dynamics
+  var P = { sep: 0.15, rot: 25, shape: 0, kf: 20, m: 1, zf: 0.5, kr: 10, zr: 0.5, cpl: 1, freq: 0.45 };
+  var st = { u: 1, v: 0, th: 0, L: 0, foldNeg: false, rotNeg: false, kickF: 0, kickR: 0 };
+  var SEP_MIN = -3, R0SQ = 0.01, FOLD_LIM = 0.25, ROT_LIM = PI / 4, BOUNCE = 0.5;
+  var tmp = [0, 0], tmp2 = [0, 0];
+
+  function step(dt) {
+    var th0 = P.rot * PI / 180, du = 1e-3;
+    screenMap(1, st.u, tmp); screenMap(1, st.u - du, tmp2);
+    var r2 = tmp[0] * tmp[0] + tmp[1] * tmp[1];
+    var dr2 = (r2 - (tmp2[0] * tmp2[0] + tmp2[1] * tmp2[1])) / du;
+    var M = Math.max(0.5 * P.m, 4 * P.kf * dt * dt);
+    var I = Math.max(2 * P.m * (r2 + R0SQ), 4 * P.kr * dt * dt);
+    var w = st.L / I;
+
+    st.v += st.kickF * Math.sqrt(P.kf / M); st.kickF = 0;
+    st.L += st.kickR * Math.sqrt(P.kr * I); st.kickR = 0;
+    if (P.zf < 0 && !st.foldNeg) st.v += FOLD_LIM * Math.sqrt(P.kf / M);
+    if (P.zr < 0 && !st.rotNeg) st.L += ROT_LIM * Math.sqrt(P.kr * I);
+    st.foldNeg = P.zf < 0; st.rotNeg = P.zr < 0;
+
+    var e = st.u - P.sep, z = P.zf;
+    if (z < 0) z *= 1 - (e / FOLD_LIM) * (e / FOLD_LIM);
+    var d = z * 2 * Math.sqrt(P.kf * M), F = -P.kf * e + P.cpl * P.m * dr2 * w * w;
+    if (d > 0) st.v = (st.v + F * dt / M) / (1 + d * dt / M);
+    else st.v += (F - d * st.v) * dt / M;
+    st.u += st.v * dt;
+    if (st.u > 1) { st.u = 1; if (st.v > 0) st.v = -BOUNCE * st.v; }
+    else if (st.u < SEP_MIN) { st.u = SEP_MIN; if (st.v < 0) st.v = -BOUNCE * st.v; }
+
+    e = st.th - th0; z = P.zr;
+    if (z < 0) z *= 1 - (e / ROT_LIM) * (e / ROT_LIM);
+    d = z * 2 * Math.sqrt(P.kr * I);
+    if (d > 0) st.L = (st.L - P.kr * e * dt) / (1 + d * dt / I);
+    else st.L += (-P.kr * e - d * w) * dt;
+    st.th += (st.L / I) * dt;
+
+    if (!isFinite(st.u + st.v + st.th + st.L)) { st.u = P.sep; st.th = th0; st.v = 0; st.L = 0; }
+  }
+
+  // ---------------------------------------------------------------- controls
+  var fmt = {
+    sep: function (v) { return v.toFixed(2); },
+    rot: function (v) { return v.toFixed(0) + '°'; },
+    shape: function (v) { return v < -0.02 ? 'pleat ' + (-v).toFixed(2) : v > 0.02 ? 'square ' + v.toFixed(2) : 'arc'; },
+    freq: function (v) { return v.toFixed(2) + ' Hz'; },
+    kf: function (v) { return v.toFixed(v < 10 ? 1 : 0); },
+    m: function (v) { return v.toFixed(2); },
+    zf: function (v) { return v.toFixed(2); },
+    kr: function (v) { return v.toFixed(v < 10 ? 1 : 0); },
+    zr: function (v) { return v.toFixed(2); },
+    cpl: function (v) { return Math.round(v * 100) + '%'; }
+  };
+  var isLog = { kf: true, m: true, kr: true };
+  var ids = ['sep', 'rot', 'shape', 'freq', 'kf', 'm', 'zf', 'kr', 'zr', 'cpl'];
+
+  function readControl(id) {
+    var raw = parseFloat($(id).value);
+    P[id] = isLog[id] ? Math.pow(10, raw) : raw;
+    $(id + 'O').textContent = fmt[id](P[id]);
+    if (id === 'shape') buildTables(P.shape);
+  }
+  function setControl(id, value) {
+    $(id).value = isLog[id] ? Math.log(value) / Math.LN10 : value;
+    readControl(id);
+  }
+  ids.forEach(function (id) {
+    $(id).addEventListener('input', function () { readControl(id); if (paused) draw(); });
+    readControl(id);
+  });
+
+  var presets = {
+    flat:   { sep: 1,    rot: 0,  shape: 0,  kf: 20, m: 1, zf: 0.6,  kr: 10, zr: 0.6,  cpl: 1 },
+    sine:   { sep: -0.5, rot: 0,  shape: 0,  kf: 20, m: 1, zf: 0.6,  kr: 10, zr: 0.6,  cpl: 1 },
+    pleat:  { sep: -0.5, rot: 0,  shape: -1, kf: 20, m: 1, zf: 0.6,  kr: 10, zr: 0.6,  cpl: 1 },
+    square: { sep: 0,    rot: 0,  shape: 1,  kf: 20, m: 1, zf: 0.6,  kr: 10, zr: 0.6,  cpl: 1 },
+    tilt:   { sep: 0.25, rot: 55, shape: 0,  kf: 20, m: 1, zf: 0.6,  kr: 10, zr: 0.6,  cpl: 1 },
+    ring:   { sep: 0.35, rot: 20, shape: 0,  kf: 30, m: 1, zf: 0.04, kr: 12, zr: 0.04, cpl: 1, kick: true },
+    osc:    { sep: 0.3,  rot: 0,  shape: 0,  kf: 14, m: 1, zf: -0.1, kr: 5,  zr: -0.1, cpl: 1 }
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-preset]'), function (b) {
+    b.addEventListener('click', function () {
+      var p = presets[b.getAttribute('data-preset')];
+      Object.keys(p).forEach(function (k) { if (k !== 'kick') setControl(k, p[k]); });
+      if (p.kick) { st.kickF = 0.45; st.kickR = PI / 3; }
+      if (paused) { settle(4); draw(); }
+    });
+  });
+  $('kickFold').addEventListener('click', function () { st.kickF = 0.45; if (paused) togglePause(); });
+  $('kickSpin').addEventListener('click', function () { st.kickR = PI / 3; if (paused) togglePause(); });
+
+  // ---------------------------------------------------------------- history
+  var HN = 420, hD = new Float32Array(HN), hO = new Float32Array(HN), hHead = 0;
+  var SIM_DT = 1 / 120, SUB = 4, simT = 0, spot = { s: 0, D: 0, O: 0 };
+
+  function advance() {
+    for (var k = 0; k < SUB; k++) step(SIM_DT / SUB);
+    simT += SIM_DT;
+    spot.s = Math.sin(TWO_PI * P.freq * simT);
+    screenMap(spot.s, st.u, tmp);
+    var c = Math.cos(st.th), s = Math.sin(st.th);
+    spot.D = tmp[0] * c - tmp[1] * s;
+    spot.O = tmp[0] * s + tmp[1] * c;
+    hHead = (hHead + 1) % HN;
+    hD[hHead] = spot.D; hO[hHead] = spot.O;
+  }
+  function settle(seconds) { for (var i = 0; i < seconds / SIM_DT; i++) advance(); }
+
+  // ---------------------------------------------------------------- drawing
+  var cv = $('fig'), g = cv.getContext('2d'), col = {};
+  function readColors() {
+    var cs = getComputedStyle(document.documentElement);
+    ['surface', 'ink', 'muted', 'rule', 'spot', 'def', 'orth'].forEach(function (k) {
+      col[k] = cs.getPropertyValue('--' + k).trim();
+    });
+  }
+
+  function strip(u, th, ox, oy, R, n) {
+    var c = Math.cos(th), s = Math.sin(th), pts = [];
+    for (var i = 0; i <= n; i++) {
+      screenMap(-1 + 2 * i / n, u, tmp);
+      pts.push(ox + R * (tmp[0] * c - tmp[1] * s), oy - R * (tmp[0] * s + tmp[1] * c));
+    }
+    return pts;
+  }
+  function poly(pts) {
+    g.beginPath();
+    g.moveTo(pts[0], pts[1]);
+    for (var i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+    g.stroke();
+  }
+  function coil(x0, y0, x1, y1, turns, amp) {
+    var dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+    var nx = -dy / len, ny = dx / len, n = turns * 2, lead = Math.min(18, len * 0.15);
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.lineTo(x0 + dx / len * lead, y0 + dy / len * lead);
+    for (var i = 0; i < n; i++) {
+      var f = lead + (len - 2 * lead) * (i + 0.5) / n, sgn = i % 2 ? -1 : 1;
+      g.lineTo(x0 + dx / len * f + nx * amp * sgn, y0 + dy / len * f + ny * amp * sgn);
+    }
+    g.lineTo(x1 - dx / len * lead, y1 - dy / len * lead);
+    g.lineTo(x1, y1);
+    g.stroke();
+  }
+  function label(text, x, y, color, align, size) {
+    g.font = '500 ' + (size || 26) + 'px "IBM Plex Mono", ui-monospace, monospace';
+    g.fillStyle = color; g.textAlign = align || 'left'; g.textBaseline = 'middle';
+    g.fillText(text, x, y);
+  }
+
+  // end-mass label, pushed outward from the hinge so it clears the strip
+  function endLabel(text, x, y, ox, oy, mr) {
+    var dx = x - ox, dy = y - oy, len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 4) { dx = 0; dy = -1; len = 1; }
+    label(text, x + dx / len * (mr + 26), y + dy / len * (mr + 26), col.muted, 'center', 24);
+  }
+
+  function draw() {
+    var W = cv.width, H = cv.height;
+    // Layout: main square top-right; orthogonal trace to its left; default trace below.
+    var top = 110, Q = 900, left = W - Q - 40, ox = left + Q / 2, oy = top + Q / 2, R = Q * 0.43;
+    var traceLen = 370;   // px of history
+    g.clearRect(0, 0, W, H);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+
+    // input ruler
+    var rx0 = left + 60, rx1 = left + Q - 60, ry = 52;
+    g.strokeStyle = col.rule; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(rx0, ry); g.lineTo(rx1, ry); g.stroke();
+    for (var i = 0; i <= 4; i++) {
+      var tx = rx0 + (rx1 - rx0) * i / 4;
+      g.beginPath(); g.moveTo(tx, ry - 9); g.lineTo(tx, ry + 9); g.stroke();
+    }
+    label('−1', rx0 - 14, ry, col.muted, 'right');
+    label('+1', rx1 + 14, ry, col.muted, 'left');
+    label('INPUT = POSITION', left - 30, ry, col.muted, 'right');
+    var ix = rx0 + (rx1 - rx0) * (spot.s + 1) / 2;
+    g.fillStyle = col.spot; g.beginPath(); g.arc(ix, ry, 11, 0, TWO_PI); g.fill();
+
+    // frame and axes of the main square
+    g.strokeStyle = col.rule; g.lineWidth = 2;
+    g.strokeRect(left, top, Q, Q);
+    g.setLineDash([4, 10]);
+    g.beginPath(); g.moveTo(left, oy); g.lineTo(left + Q, oy); g.moveTo(ox, top); g.lineTo(ox, top + Q); g.stroke();
+    g.setLineDash([]);
+
+    // rest outline (where the springs are pulling)
+    var th0 = P.rot * PI / 180;
+    g.strokeStyle = col.muted; g.lineWidth = 2; g.setLineDash([10, 9]);
+    poly(strip(P.sep, th0, ox, oy, R, 240));
+    g.setLineDash([]);
+
+    // live strip, fold spring, masses
+    var pts = strip(st.u, st.th, ox, oy, R, 320), n2 = pts.length;
+    var ax = pts[0], ay = pts[1], bx = pts[n2 - 2], by = pts[n2 - 1];
+    g.strokeStyle = col.muted; g.lineWidth = 2.5;
+    coil(ax, ay, bx, by, 9, 13);
+    g.strokeStyle = col.ink; g.lineWidth = 7;
+    poly(pts);
+    var mr = 13 * Math.pow(P.m, 1 / 3) + 6;
+    g.fillStyle = col.ink;
+    g.beginPath(); g.arc(ax, ay, mr, 0, TWO_PI); g.fill();
+    g.beginPath(); g.arc(bx, by, mr, 0, TWO_PI); g.fill();
+    endLabel('−1', ax, ay, ox, oy, mr);
+    endLabel('+1', bx, by, ox, oy, mr);
+
+    // hinge with torsion spring
+    g.strokeStyle = col.muted; g.lineWidth = 2.5;
+    g.beginPath();
+    for (var a = 0; a <= 40; a++) {
+      var ang = -st.th + a / 40 * 3.5 * PI, rr = 10 + a * 0.75;
+      var hx = ox + rr * Math.cos(ang), hy = oy + rr * Math.sin(ang);
+      if (a === 0) g.moveTo(hx, hy); else g.lineTo(hx, hy);
+    }
+    g.stroke();
+    g.fillStyle = col.surface; g.beginPath(); g.arc(ox, oy, 8, 0, TWO_PI); g.fill();
+    g.strokeStyle = col.ink; g.lineWidth = 3; g.beginPath(); g.arc(ox, oy, 8, 0, TWO_PI); g.stroke();
+
+    // lit point and its two projections
+    var sx = ox + R * spot.D, sy = oy - R * spot.O;
+    var botY = top + Q, leftX = left;
+    g.lineWidth = 2.5; g.setLineDash([6, 8]);
+    g.strokeStyle = col.def;  g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx, botY); g.stroke();
+    g.strokeStyle = col.orth; g.beginPath(); g.moveTo(sx, sy); g.lineTo(leftX, sy); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = col.spot; g.globalAlpha = 0.25;
+    g.beginPath(); g.arc(sx, sy, 30, 0, TWO_PI); g.fill();
+    g.globalAlpha = 1;
+    g.beginPath(); g.arc(sx, sy, 14, 0, TWO_PI); g.fill();
+
+    // default trace: flows downward from the bottom edge
+    var i2, idx, px = 0, py = 0;
+    g.strokeStyle = col.rule; g.lineWidth = 2;
+    g.strokeRect(left, botY + 18, Q, traceLen);
+    g.strokeStyle = col.def; g.lineWidth = 5;
+    g.beginPath();
+    for (i2 = 0; i2 < HN; i2++) {
+      idx = (hHead - i2 + HN) % HN;
+      px = ox + R * hD[idx]; py = botY + 18 + i2 * traceLen / HN;
+      if (i2 === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.fillStyle = col.def; g.beginPath(); g.arc(sx, botY + 18, 10, 0, TWO_PI); g.fill();
+    label('DEFAULT OUT', left + Q, botY + 18 + traceLen + 30, col.def, 'right');
+    label('time ↓', left, botY + 18 + traceLen + 30, col.muted, 'left', 22);
+
+    // orthogonal trace: flows leftward from the left edge
+    g.strokeStyle = col.rule; g.lineWidth = 2;
+    g.strokeRect(leftX - 18 - traceLen, top, traceLen, Q);
+    g.strokeStyle = col.orth; g.lineWidth = 5;
+    g.beginPath();
+    for (i2 = 0; i2 < HN; i2++) {
+      idx = (hHead - i2 + HN) % HN;
+      px = leftX - 18 - i2 * traceLen / HN; py = oy - R * hO[idx];
+      if (i2 === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.fillStyle = col.orth; g.beginPath(); g.arc(leftX - 18, sy, 10, 0, TWO_PI); g.fill();
+    label('ORTHOGONAL OUT', leftX - 18 - traceLen, top + Q + 30, col.orth, 'left');
+    label('← time', leftX - 18, top + Q + 30, col.muted, 'right', 22);
+
+    // live readout
+    label('separation ' + st.u.toFixed(2), leftX - 18 - traceLen, botY + 18 + traceLen - 60, col.muted, 'left', 24);
+    label('rotation   ' + (st.th * 180 / PI).toFixed(0) + '°', leftX - 18 - traceLen, botY + 18 + traceLen - 22, col.muted, 'left', 24);
+  }
+
+  // ---------------------------------------------------------------- run loop
+  var paused = false, last = 0, acc = 0, frames = 0;
+  function frame(now) {
+    if (paused) return;
+    var dt = Math.min(0.05, (now - last) / 1000 || 0);
+    last = now; acc += dt;
+    while (acc >= SIM_DT) { advance(); acc -= SIM_DT; }
+    if (frames++ % 30 === 0) readColors();
+    draw();
+    requestAnimationFrame(frame);
+  }
+  function togglePause() {
+    paused = !paused;
+    $('pause').textContent = paused ? 'Play' : 'Pause';
+    if (!paused) { last = performance.now(); requestAnimationFrame(frame); }
+  }
+  $('pause').addEventListener('click', togglePause);
+
+  buildTables(P.shape);
+  st.u = 1; st.th = 0;        // start flat so the first seconds show the strip curling in
+  readColors();
+  settle(3.5);                // traces are populated on the very first frame
+  draw();
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    paused = true; $('pause').textContent = 'Play';
+  } else {
+    last = performance.now(); requestAnimationFrame(frame);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (paused) draw(); });
+})();
+</script>
+</body>
+</html>
