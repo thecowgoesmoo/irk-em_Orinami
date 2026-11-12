@@ -5,6 +5,8 @@ screen whose fold and rotation are sprung, coupled second-order systems.
 An interactive demo of operation is available here:
 https://thecowgoesmoo.github.io/irk-em_Orinami/How%20Orinami%20Works.html
 
+Also ported to run on the hardware of the Mutable Instruments Clouds module.  Here's a re-skinned Clouds with labels for use as Orinami:
+<img src="./OrinamiSkinOnClouds.jpeg" alt="Panel" width="600">
 ## Build
 
 1. Install the Rack plugin toolchain for your OS:
